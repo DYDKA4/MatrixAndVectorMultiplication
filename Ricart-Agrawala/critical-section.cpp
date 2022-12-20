@@ -5,6 +5,7 @@
 #include <ctime>
 #include <mpi/mpi.h>
 #include "stack"
+#define REPLY_MESSAGE 1
 
 
 void critical_section(){
@@ -43,7 +44,8 @@ void incoming_message_checker(int size, int rank, std::stack<int> stack_of_reque
                 else{
                     message = 1;
                     printf("Rank: %d | send reply to %d\n", rank, i);
-                    MPI_Isend(&message, 1, MPI_INT, i, 1, MPI_COMM_WORLD,&request);
+                    MPI_Isend(&message, 1, MPI_INT, i, REPLY_MESSAGE,
+                              MPI_COMM_WORLD,&request);
                 }
             }
             else{
@@ -53,6 +55,8 @@ void incoming_message_checker(int size, int rank, std::stack<int> stack_of_reque
         }
     }
 }
+
+
 int count_access_token(int *RD, int size){
     int result = 0;
     for (int i = 0; i < size; ++i) {
@@ -109,25 +113,24 @@ int main(int argc, char *argv[]){
         }
     }
     //check if some incoming messages
-    incoming_message_checker(size, rank, stack_of_requests, time);
-    while (count_access_token(RD, size)!=4) {
-        printf("Rank: %d | count_access_token = %d\n",rank, count_access_token(RD, size));
-        for (int i = 0; i < size - 1; ++i) {
-            if (rank != i) {
-                flag = 0;
-                int tmp_result;
+    int ok_signals = 0;
+    while (ok_signals!=size) {
+        incoming_message_checker(size, rank, stack_of_requests, time);
+        printf("Rank: %d | ok_signals = %d\n",rank, ok_signals);
+        flag = 0;
+        int tmp_result;
 //                printf("Rank: %d| Waiting answer from somebody\n", rank);
-                MPI_Irecv(&tmp_result, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &request);
-                MPI_Test(&request, &flag, &status);
-                if (flag) {
-                    RD[i] = tmp_result;
-//                    printf("Rank: %d| Received answer from %d\n", rank, i);
-                } else {
-//                    printf("Rank: %d | Did not receive answer from %d\n", rank, i);
-                    continue;
-                }
-            }
+        MPI_Irecv(&tmp_result, 1, MPI_INT, MPI_ANY_SOURCE, REPLY_MESSAGE,
+                  MPI_COMM_WORLD, &request);
+        MPI_Test(&request, &flag, &status);
+        if (flag) {
+            ok_signals++;
+            RD[status.MPI_SOURCE] = tmp_result;
+            printf("Rank: %d| Received answer from %d\n", rank, status.MPI_SOURCE);
+        } else {
+            printf("Rank: %d | Did not receive answer\n", rank);
         }
+        sleep(5);
     }
     for (int i = 0; i < size; ++i) {
         printf("Rank: %d | RD[%d] = %d\n", rank, i, RD[i]);
@@ -147,7 +150,8 @@ int main(int argc, char *argv[]){
 
             printf("%d received message from %d\n",rank, status.MPI_SOURCE);
             message = 1;
-            MPI_Send(&message, 1, MPI_INT, status.MPI_SOURCE, 1, MPI_COMM_WORLD);
+            MPI_Isend(&message, 1, MPI_INT, status.MPI_SOURCE, REPLY_MESSAGE,
+                      MPI_COMM_WORLD, &request);
         }
     }
     int i;
@@ -155,7 +159,7 @@ int main(int argc, char *argv[]){
         i = stack_of_requests.top();
         printf("%d received message from %d\n",rank, i);
         message = 1;
-        MPI_Send(&message, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
+        MPI_Isend(&message, 1, MPI_INT, i, MPI_COMM_WORLD, MPI_COMM_WORLD, &request);
         stack_of_requests.pop();
     }
     MPI_Finalize();
