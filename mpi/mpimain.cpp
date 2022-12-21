@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <mpi.h>
+#include <mpi/mpi.h>
 
 int ProcNumbers;
 int ProcRank;
@@ -136,7 +136,7 @@ int main(int argc, char* argv[]) {
     if(ProcRank == 0){
         printf ("Parallel matrix-vector multiplication program\n");
     }
-    for (int Size = 1000; Size <= 17000; Size+=2000) {
+    for (int Size = 1000; Size <= 9000; Size+=2000) {
         totalDuration = 0;
         ProcessInitialization(Matrix, Vector, Result, ProcRows, ProcResult, Size, RowNum);
 
@@ -144,7 +144,6 @@ int main(int argc, char* argv[]) {
 
             Start = MPI_Wtime();
             dataSharing(Matrix, ProcRows, Vector, Size, RowNum);
-
             ParallelResultCalcuation(ProcRows, Vector, ProcResult, Size, RowNum);
 
             ResultReplication(ProcResult, Result, Size, RowNum);
