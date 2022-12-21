@@ -22,19 +22,18 @@ void check_incoming_request(){
     int time, flag = 0;
     MPI_Request request;
     MPI_Status status;
-    do {
+    MPI_Iprobe(MPI_ANY_SOURCE, SEND_REQUEST, MPI_COMM_WORLD, &flag, &status);
+    int reply = 1;
+    while(flag){
         flag = 0;
-        MPI_Irecv(&time, 1, MPI_INT,MPI_ANY_SOURCE,
+        MPI_Irecv(&time, 1, MPI_INT,status.MPI_SOURCE,
                   SEND_REQUEST,MPI_COMM_WORLD,&request);
-        MPI_Test(&request,&flag,&status);
-        if (flag) {
-            int reply = 1;
-            printf("Rank: %d | Receive request from %d\n", rank, status.MPI_SOURCE);
-            MPI_Isend(&reply,1,MPI_INT,status.MPI_SOURCE,REPLY_MESSAGE,
-                      MPI_COMM_WORLD,&request);
-            printf("Rank: %d | Send reply to %d\n", rank, status.MPI_SOURCE);
-        }
-    } while (flag);
+        printf("Rank: %d | Receive request from %d\n", rank, status.MPI_SOURCE);
+        MPI_Isend(&reply,1,MPI_INT,status.MPI_SOURCE,REPLY_MESSAGE,
+                  MPI_COMM_WORLD,&request);
+        printf("Rank: %d | Send reply to %d\n", rank, status.MPI_SOURCE);
+        MPI_Iprobe(MPI_ANY_SOURCE, SEND_REQUEST, MPI_COMM_WORLD, &flag, &status);
+    }
     return;
 }
 
@@ -55,23 +54,61 @@ int check_incoming_reply(){
     int time, flag = 0, answers = 0;
     MPI_Request request;
     MPI_Status status;
-//    for (int i = 0; i < size; ++i) {
-//        if (i != rank) {
-                do {
-                    flag = 0;
-                    MPI_Irecv(&time, 1, MPI_INT,MPI_ANY_SOURCE,REPLY_MESSAGE,
-                              MPI_COMM_WORLD,&request);
-                    MPI_Test(&request,&flag,&status);
-                    if (flag) {
-                        printf("Rank: %d | Receive reply from %d\n", rank, status.MPI_SOURCE);
-                        answers++;
-                    }
-                } while (flag);
-//            }
-//        }
-//    }
+    MPI_Iprobe(MPI_ANY_SOURCE, REPLY_MESSAGE, MPI_COMM_WORLD, &flag, &status);
+    int reply = 1;
+    while(flag){
+        flag = 0;
+        MPI_Irecv(&time, 1, MPI_INT,status.MPI_SOURCE,REPLY_MESSAGE,
+                  MPI_COMM_WORLD,&request);
+        printf("Rank: %d | Receive reply from %d\n", rank, status.MPI_SOURCE);
+        answers++;
+        MPI_Iprobe(MPI_ANY_SOURCE, REPLY_MESSAGE, MPI_COMM_WORLD, &flag, &status);
+    }
     return answers;
 }
+
+void critical_section(){
+    std::ifstream my_file;
+    my_file.open("critical.txt");
+    if(my_file.is_open()){
+        std::cout << "file exists\n";
+        my_file.close();
+        return;
+    } else{
+        std::fopen("critical.txt", "w");
+        int time_to_sleep = 1 + random() % 10;
+        sleep(time_to_sleep);
+        std::remove("critical.txt");
+        std::cout << "file does not exists\n";
+        return;
+    }
+}
+
+std::stack<int> check_incoming_request_while_requesting_access(int time, std::stack<int> stack_of_requests){
+    int tmp_time, flag = 0;
+    MPI_Request request;
+    MPI_Status status;
+    MPI_Iprobe(MPI_ANY_SOURCE, SEND_REQUEST, MPI_COMM_WORLD, &flag, &status);
+
+    int reply = 1;
+    while(flag){
+        flag = 0;
+        MPI_Irecv(&tmp_time, 1, MPI_INT,status.MPI_SOURCE,
+                  SEND_REQUEST,MPI_COMM_WORLD,&request);
+        printf("Rank: %d | Receive request from %d\n", rank, status.MPI_SOURCE);
+        if (tmp_time > time){
+            printf("Rank: %d | Save request from %d\n", rank, status.MPI_SOURCE);
+            stack_of_requests.push(status.MPI_SOURCE);
+        }else{
+            MPI_Isend(&reply,1,MPI_INT,status.MPI_SOURCE,REPLY_MESSAGE,
+                      MPI_COMM_WORLD,&request);
+            printf("Rank: %d | Send reply to %d\n", rank, status.MPI_SOURCE);
+        }
+        MPI_Iprobe(MPI_ANY_SOURCE, SEND_REQUEST, MPI_COMM_WORLD, &flag, &status);
+    }
+    return stack_of_requests;
+}
+
 int main(int argc, char *argv[]){
     MPI_Init( &argc, &argv );
     int time, answers = 0;
@@ -95,11 +132,24 @@ int main(int argc, char *argv[]){
     //waiting answer from other threads
     while(answers != size-1){
         printf("Rank: %d | Receive answers %d\n", rank, answers);
-        check_incoming_request();
+        stack_of_requests = check_incoming_request_while_requesting_access(time, stack_of_requests);
         answers += check_incoming_reply();
         sleep(1);
     }
-    printf("Rank: %d | FINISH \n", rank);
+    printf("Rank: %d | ENTERING critical section \n", rank);
+    critical_section();
+    printf("Rank: %d | EXIT critical section \n", rank);
+
+    check_incoming_request();
+    while (!stack_of_requests.empty()){
+        printf("%d received message from %d\n",rank, stack_of_requests.top());
+        int message = 1;
+        MPI_Isend(&message, 1, MPI_INT, stack_of_requests.top(),
+                  REPLY_MESSAGE, MPI_COMM_WORLD, &request);
+        stack_of_requests.pop();
+    }
+    check_incoming_request();
+
     MPI_Finalize();
 
     return 1;
