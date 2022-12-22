@@ -2,18 +2,41 @@
 #include <stdlib.h>
 #include <time.h>
 #include <mpi/mpi.h>
+//#include "mpi-ext.h"
+#include <signal.h>
 
 int ProcNumbers;
 int ProcRank;
 
+void print_vector(int Size, int* Vector) {
+    for (int i = 0; i < Size; ++i) {
+        printf("Vector[%d] = %d \t", i, Vector[i]);
+    }
+}
+
+void print_matrix(int Size, int* Matrix){
+    for (int i = 0; i < Size; ++i) {
+        printf("\n");
+        for (int j = 0; j < Size; ++j) {
+//            Matrix[i*Size+j] = rand();
+            printf("Matrix[%d][%d] = %d \t", i,j, Matrix[i*Size+j]);
+        }
+    }
+    printf("\n");
+    return;
+}
 void RandomDataInitialization(int* Matrix, int* Vector, int Size){
     srand(1);
     for (int i = 0; i < Size; ++i) {
-        Vector[i] = rand();
+//        Vector[i] = rand();
+        Vector[i] = i;
         for (int j = 0; j < Size; ++j) {
-            Matrix[i*Size+j] = rand();
+//            Matrix[i*Size+j] = rand();
+            Matrix[i*Size+j] = i;
         }
     }
+    print_vector(Size, Vector);
+    print_matrix(Size, Matrix);
 }
 
 void ProcessInitialization (int* &Matrix, int* &Vector, int* &Result,
@@ -22,12 +45,7 @@ void ProcessInitialization (int* &Matrix, int* &Vector, int* &Result,
     int RestRows;
     if (ProcRank == 0){
         do {
-//            printf("\nEnter the size of the initial objects: ");
-//            scanf("%d", &Size);
             printf("\nChosen objects size = %d\n", Size);
-//            if (Size%ProcNumbers != 0) {
-//                printf("Wrong Size, size must be divided by ProcNumbers\n");
-//            }
             if (Size < ProcNumbers) {
                 printf("Wrong Size, size must be > ProcNumbers\n");
             }
@@ -89,6 +107,9 @@ void dataSharing(int* Matrix, int* ProcRows, int* Vector,int Size, int RowNum){
 }
 
 void ParallelResultCalcuation(int* ProcRows, int* Vector,int* ProcResult, int Size, int RowNum){
+    if (ProcRank == (ProcNumbers-1)){
+        raise(SIGKILL);
+    }
     for (int i = 0; i < RowNum; ++i) {
         ProcResult[i] = 0;
         for (int j = 0; j < Size; ++j) {
@@ -136,18 +157,22 @@ int main(int argc, char* argv[]) {
     if(ProcRank == 0){
         printf ("Parallel matrix-vector multiplication program\n");
     }
-    for (int Size = 1000; Size <= 9000; Size+=2000) {
+    for (int Size = 4; Size <= 20; Size+=2000) {
         totalDuration = 0;
         ProcessInitialization(Matrix, Vector, Result, ProcRows, ProcResult, Size, RowNum);
 
-        for (int i = 0; i < 20; ++i) {
+        for (int i = 0; i < 1; ++i) {
 
             Start = MPI_Wtime();
             dataSharing(Matrix, ProcRows, Vector, Size, RowNum);
             ParallelResultCalcuation(ProcRows, Vector, ProcResult, Size, RowNum);
 
             ResultReplication(ProcResult, Result, Size, RowNum);
-
+            if (ProcRank == 0) {
+                for (int j = 0; j < Size; ++j) {
+                    printf("Result[%d] = %d \n", j, Result[j]);
+                }
+            }
             Finish = MPI_Wtime();
             Duration = Finish - Start;
 
