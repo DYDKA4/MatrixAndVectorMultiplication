@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <time.h>
 #include <mpi.h>
-#include <mpi-ext.h>
 #include <signal.h>
 
 int ProcNumbers;
