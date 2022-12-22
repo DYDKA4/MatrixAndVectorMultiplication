@@ -10,14 +10,6 @@
 
 int size, rank;
 
-int count_access_token(int *RD){
-    int result = 0;
-    for (int i = 0; i < size; ++i) {
-        result += RD[i];
-    }
-    return result;
-}
-
 void check_incoming_request(){
     int time, flag = 0;
     MPI_Request request;
